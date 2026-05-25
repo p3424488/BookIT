@@ -31,11 +31,9 @@ export const io = new Server(httpServer, {
 // Middleware
 app.use(helmet());
 app.use(cors({
-  origin: [
-    process.env.CLIENT_URL || 'http://localhost:5173',
-    'http://localhost:5173',
-    'https://bookit-app.vercel.app',
-  ],
+  origin: function(origin, callback) {
+    callback(null, true);
+  },
   credentials: true,
 }));
 app.use(morgan('dev'));
