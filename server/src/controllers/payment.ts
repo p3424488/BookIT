@@ -3,6 +3,7 @@ import Razorpay from 'razorpay';
 import crypto from 'crypto';
 import { prisma } from '../lib/prisma';
 import { AuthRequest } from '../middleware/auth';
+import { sendBookingConfirmation } from '../lib/email';
 
 const razorpay = new Razorpay({
   key_id: process.env.RAZORPAY_KEY_ID!,
@@ -54,22 +55,116 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
 };
 
 // ─── VERIFY PAYMENT ───────────────────────────────────────
-export const verifyPayment = async (req: AuthRequest, res: Response) => {
+export const verifyPayment = async (
+  req: AuthRequest,
+  res: Response
+) => {
   try {
+
+    // Extract data from request
     const {
-      razorpay_order_id,
+      booking,
+      seats,
       razorpay_payment_id,
-      razorpay_signature,
-      eventId,
-      seatIds,
     } = req.body;
 
-    const userId = req.userId;
+    // Logged in user
+    const user = req.user;
 
-    if (!userId) {
-      res.status(401).json({ message: 'Please login to continue' });
-      return;
-    }
+    // Calculate total amount
+    const total = seats.reduce(
+      (sum: number, s: any) =>
+        sum + (s.price || 0),
+      0
+    );
+
+    // Prepare email data
+    const emailData = {
+      to: user.email,
+      userName: user.name,
+
+      eventTitle: booking.event.title,
+      eventVenue: booking.event.venue,
+      eventCity: booking.event.city,
+
+      eventDate: new Date(
+        booking.event.dateTime
+      ).toLocaleDateString("en-IN", {
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+
+      seats: seats.map((s: any) => ({
+        row: s.row,
+        column: s.column,
+        category: s.category,
+        price: s.price,
+      })),
+
+      total,
+      bookingId: booking.id,
+      paymentId: razorpay_payment_id,
+    };
+
+    console.log(emailData);
+
+    return res.status(200).json({
+      success: true,
+      message: "Payment verified successfully",
+      data: emailData,
+    });
+
+  } catch (error) {
+
+    console.error(error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Payment verification failed",
+    });
+  }
+};
+
+    // Send confirmation email
+try {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+  });
+
+  if (user) {
+    await sendBookingConfirmation({
+      to: user.email,
+      userName: user.name,
+      eventTitle: booking.event.title,
+      eventVenue: booking.event.venue,
+      eventCity: booking.event.city,
+      eventDate: new Date(booking.event.dateTime).toLocaleDateString('en-IN', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      }),
+      seats: seats.map(s => ({
+        row: s.row,
+        column: s.column,
+        category: s.category,
+        price: s.price,
+      })),
+      total,
+      bookingId: booking.id,
+      paymentId: razorpay_payment_id,
+    });
+  }
+} catch (emailError) {
+  console.error('Email sending failed:', emailError);
+  // Don't fail the booking if email fails
+}
 
     // Step 1 — Verify signature
     const body = razorpay_order_id + '|' + razorpay_payment_id;
