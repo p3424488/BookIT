@@ -55,116 +55,23 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
 };
 
 // ─── VERIFY PAYMENT ───────────────────────────────────────
-export const verifyPayment = async (
-  req: AuthRequest,
-  res: Response
-) => {
-  try {
 
-    // Extract data from request
+   export const verifyPayment = async (req: AuthRequest, res: Response) => {
+  try {
     const {
-      booking,
-      seats,
+      razorpay_order_id,
       razorpay_payment_id,
+      razorpay_signature,
+      eventId,
+      seatIds,
     } = req.body;
 
-    // Logged in user
-    const user = req.user;
+    const userId = req.userId;
 
-    // Calculate total amount
-    const total = seats.reduce(
-      (sum: number, s: any) =>
-        sum + (s.price || 0),
-      0
-    );
-
-    // Prepare email data
-    const emailData = {
-      to: user.email,
-      userName: user.name,
-
-      eventTitle: booking.event.title,
-      eventVenue: booking.event.venue,
-      eventCity: booking.event.city,
-
-      eventDate: new Date(
-        booking.event.dateTime
-      ).toLocaleDateString("en-IN", {
-        weekday: "long",
-        day: "numeric",
-        month: "long",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
-
-      seats: seats.map((s: any) => ({
-        row: s.row,
-        column: s.column,
-        category: s.category,
-        price: s.price,
-      })),
-
-      total,
-      bookingId: booking.id,
-      paymentId: razorpay_payment_id,
-    };
-
-    console.log(emailData);
-
-    return res.status(200).json({
-      success: true,
-      message: "Payment verified successfully",
-      data: emailData,
-    });
-
-  } catch (error) {
-
-    console.error(error);
-
-    return res.status(500).json({
-      success: false,
-      message: "Payment verification failed",
-    });
-  }
-};
-
-    // Send confirmation email
-try {
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-  });
-
-  if (user) {
-    await sendBookingConfirmation({
-      to: user.email,
-      userName: user.name,
-      eventTitle: booking.event.title,
-      eventVenue: booking.event.venue,
-      eventCity: booking.event.city,
-      eventDate: new Date(booking.event.dateTime).toLocaleDateString('en-IN', {
-        weekday: 'long',
-        day: 'numeric',
-        month: 'long',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      }),
-      seats: seats.map(s => ({
-        row: s.row,
-        column: s.column,
-        category: s.category,
-        price: s.price,
-      })),
-      total,
-      bookingId: booking.id,
-      paymentId: razorpay_payment_id,
-    });
-  }
-} catch (emailError) {
-  console.error('Email sending failed:', emailError);
-  // Don't fail the booking if email fails
-}
+    if (!userId) {
+      res.status(401).json({ message: 'Please login to continue' });
+      return;
+    }
 
     // Step 1 — Verify signature
     const body = razorpay_order_id + '|' + razorpay_payment_id;
@@ -227,6 +134,45 @@ try {
       },
     });
 
+    // Step 7 — Send confirmation email
+    // booking and seats are now available ✅
+    try {
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+      });
+
+      if (user) {
+        await sendBookingConfirmation({
+          to: user.email,
+          userName: user.name,
+          eventTitle: booking.event.title,
+          eventVenue: booking.event.venue,
+          eventCity: booking.event.city,
+          eventDate: new Date(booking.event.dateTime).toLocaleDateString('en-IN', {
+            weekday: 'long',
+            day: 'numeric',
+            month: 'long',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+          }),
+          seats: seats.map(s => ({
+            row: s.row,
+            column: s.column,
+            category: s.category,
+            price: s.price,
+          })),
+          total,
+          bookingId: booking.id,
+          paymentId: razorpay_payment_id,
+        });
+      }
+    } catch (emailError) {
+      console.error('Email sending failed:', emailError);
+      // Don't fail the booking if email fails
+    }
+
+    // Step 8 — Send response
     res.status(201).json({
       message: 'Payment verified and booking confirmed!',
       booking,
